@@ -1,1 +1,1 @@
-# lstm-walk-foward-validation
+# lstm-walk-forward-validation
