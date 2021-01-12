@@ -1,14 +1,11 @@
 import pandas
-import numpy
-
 from math import sqrt
-
 from numpy import array
 from pandas import read_csv
 from sklearn.metrics import mean_squared_error
 
 from helpers import split_dataset, build_model, forecast, evaluate_forecasts, summarize_scores, scale, \
-    restructure_into_daily_data, reshape_input_predict, to_supervised
+    restructure_data_by_window
 from utils import plot_results, plot_scatter
 
 N_TRAIN_HOURS = 365 * 4 * 8
@@ -28,7 +25,7 @@ def run():
                   index_col=0,
                   parse_dates=True)
 
-    for cell in [108 * 2 + 1]:  # [50, 100, 150, 200, 250, 300, 400]:
+    for cell in [108 * 2 + 1]:  # :
         for epoch in [1000, ]:  # [1000, 2000, 3000, 4000, 5000]:
             for batch_size in [500, ]:  # [500, 1000, 1500]:
                 for n_input in [1, 2, 4, 8, 12, 16]:
@@ -49,8 +46,8 @@ def run():
                             train_scaled, test_scaled = split_dataset(data_scaled, n_out)
 
                             # restructure into window size
-                            train_scaled, test_scaled = restructure_into_daily_data(train_scaled, test_scaled, n_out)
-                            train, test = restructure_into_daily_data(train, test, n_out)
+                            train_scaled, test_scaled = restructure_data_by_window(train_scaled, test_scaled, n_out)
+                            train, test = restructure_data_by_window(train, test, n_out)
 
                             # fit model
                             model = build_model(train_scaled, n_input, n_out, cell, epoch, batch_size)
@@ -59,96 +56,11 @@ def run():
                             history_scaled = [x for x in train_scaled[:n_input, :, :]]
                             history = [x for x in train[:n_input, :, :]]
 
-                            # TRAIN walk-forward validation
-                            predictions = list()
-                            predictions_inverted = list()
-                            for i in range(len(train_scaled)):
-                                # predict the window
-                                if i % 1000 == 0:
-                                    logging.info('TRAIN walk-forward validation step {}'.format(i))
+                            train_walk_foward_validation(history, history_scaled, model, n_input, scaler, train,
+                                                         train_scaled)
 
-                                yhat_sequence = forecast(model, history_scaled, n_input)
-
-                                # store the predictions
-                                predictions.append(yhat_sequence)
-
-                                # real observation
-                                data = array(train_scaled[i, :])
-                                data[:, 0] = yhat_sequence.reshape(data.shape[0])
-                                inverse_data = scaler.inverse_transform(data)
-                                yhat_sequence_inversed = inverse_data[:, 0]
-
-                                predictions_inverted.append(yhat_sequence_inversed)
-
-                                # get real observation and add to history for predicting the next week
-                                history_scaled.append(train_scaled[i, :])
-                                history.append(train[i, :])
-
-                            # evaluate predictions on train
-                            predictions_inverted = array(predictions_inverted)
-                            score, scores = evaluate_forecasts(train[:, :, 0], predictions_inverted)
-
-                            # summarize scores on test
-                            summarize_scores('lstm', score, scores)
-
-                            rmse = sqrt(mean_squared_error(train[:, :, 0], predictions_inverted))
-                            logging.info('Train RMSE: %.3f' % rmse)
-
-                            errors_abs = abs((train[:, :, 0] - predictions_inverted))
-                            logging.info(
-                                'Train ABS MIN: {} MAX: {} MEAN: {} STD: {}'.format(errors_abs.min()
-                                                                                    , errors_abs.max()
-                                                                                    , errors_abs.mean()
-                                                                                    , errors_abs.std())
-                            )
-
-                            # history is a list by window size
-                            history_scaled = [x for x in train_scaled]
-                            history = [x for x in train]
-
-                            # TEST walk-forward validation
-                            predictions = list()
-                            predictions_inverted = list()
-                            for i in range(len(test_scaled)):
-                                # predict the window
-
-                                if i % 1000 == 0:
-                                    logging.info('TEST walk-forward validation step {}'.format(i))
-
-                                yhat_sequence = forecast(model, history_scaled, n_input)
-
-                                # store the predictions
-                                predictions.append(yhat_sequence)
-
-                                # real observation
-                                data = array(test_scaled[i, :])
-                                data[:, 0] = yhat_sequence.reshape(data.shape[0])
-                                inverse_data = scaler.inverse_transform(data)
-                                yhat_sequence_inversed = inverse_data[:, 0]
-
-                                predictions_inverted.append(yhat_sequence_inversed)
-
-                                # get real observation and add to history for predicting the next week
-                                history_scaled.append(test_scaled[i, :])
-                                history.append(test[i, :])
-
-                            # evaluate predictions on test
-                            predictions_inverted = array(predictions_inverted)
-                            score, scores = evaluate_forecasts(test[:, :, 0], predictions_inverted)
-
-                            # summarize scores on test
-                            summarize_scores('lstm', score, scores)
-
-                            rmse = sqrt(mean_squared_error(test[:, :, 0], predictions_inverted))
-                            logging.info('Test RMSE: %.3f' % rmse)
-
-                            errors_abs = abs((test[:, :, 0] - predictions_inverted))
-                            logging.info(
-                                'Test ABS MIN: {} MAX: {} MEAN: {} STD: {}'.format(errors_abs.min()
-                                                                                   , errors_abs.max()
-                                                                                   , errors_abs.mean()
-                                                                                   , errors_abs.std())
-                            )
+                            predictions_inverted = test_walk_foward_validation(model, n_input, scaler, test,
+                                                                               test_scaled, train, train_scaled)
 
                             logging.info("predictions_inverted: {}".format(predictions_inverted.shape))
                             logging.info("test {}".format(test.shape))
@@ -167,6 +79,102 @@ def run():
 
                         except Exception as e:
                             logging.info(e)
+
+
+def test_walk_foward_validation(model, n_input, scaler, test, test_scaled, train, train_scaled):
+    """TEST walk-forward validation"""
+
+    # history is a list by window size
+    history_scaled = [x for x in train_scaled]
+    history = [x for x in train]
+
+    predictions = list()
+    predictions_inverted = list()
+    for i in range(len(test_scaled)):
+        # predict the window
+
+        if i % 1000 == 0:
+            logging.info('TEST walk-forward validation step {}'.format(i))
+
+        yhat_sequence = forecast(model, history_scaled, n_input)
+
+        # store the predictions
+        predictions.append(yhat_sequence)
+
+        # real observation
+        data = array(test_scaled[i, :])
+        data[:, 0] = yhat_sequence.reshape(data.shape[0])
+        inverse_data = scaler.inverse_transform(data)
+        yhat_sequence_inversed = inverse_data[:, 0]
+
+        predictions_inverted.append(yhat_sequence_inversed)
+
+        # get real observation and add to history for predicting the next week
+        history_scaled.append(test_scaled[i, :])
+        history.append(test[i, :])
+
+    # evaluate predictions on test
+    predictions_inverted = array(predictions_inverted)
+    score, scores = evaluate_forecasts(test[:, :, 0], predictions_inverted)
+
+    # summarize scores on test
+    summarize_scores('lstm', score, scores)
+    rmse = sqrt(mean_squared_error(test[:, :, 0], predictions_inverted))
+    logging.info('Test RMSE: %.3f' % rmse)
+    errors_abs = abs((test[:, :, 0] - predictions_inverted))
+
+    logging.info(
+        'Test ABS MIN: {} MAX: {} MEAN: {} STD: {}'.format(errors_abs.min()
+                                                           , errors_abs.max()
+                                                           , errors_abs.mean()
+                                                           , errors_abs.std())
+    )
+    return predictions_inverted
+
+
+def train_walk_foward_validation(history, history_scaled, model, n_input, scaler, train, train_scaled):
+    """TRAIN walk-forward validation"""
+
+    predictions = list()
+    predictions_inverted = list()
+    for i in range(len(train_scaled)):
+        # predict the window
+        if i % 1000 == 0:
+            logging.info('TRAIN walk-forward validation step {}'.format(i))
+
+        yhat_sequence = forecast(model, history_scaled, n_input)
+
+        # store the predictions
+        predictions.append(yhat_sequence)
+
+        # real observation
+        data = array(train_scaled[i, :])
+        data[:, 0] = yhat_sequence.reshape(data.shape[0])
+        inverse_data = scaler.inverse_transform(data)
+        yhat_sequence_inversed = inverse_data[:, 0]
+
+        predictions_inverted.append(yhat_sequence_inversed)
+
+        # get real observation and add to history for predicting the next week
+        history_scaled.append(train_scaled[i, :])
+        history.append(train[i, :])
+
+    # evaluate predictions on train
+    predictions_inverted = array(predictions_inverted)
+    score, scores = evaluate_forecasts(train[:, :, 0], predictions_inverted)
+
+    # summarize scores on test
+    summarize_scores('lstm', score, scores)
+    rmse = sqrt(mean_squared_error(train[:, :, 0], predictions_inverted))
+    logging.info('Train RMSE: %.3f' % rmse)
+    errors_abs = abs((train[:, :, 0] - predictions_inverted))
+
+    logging.info(
+        'Train ABS MIN: {} MAX: {} MEAN: {} STD: {}'.format(errors_abs.min()
+                                                            , errors_abs.max()
+                                                            , errors_abs.mean()
+                                                            , errors_abs.std())
+    )
 
 
 if __name__ == "__main__":

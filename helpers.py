@@ -1,6 +1,4 @@
-# multivariate multi-step encoder-decoder lstm
 import logging
-from math import sqrt
 
 from keras import activations
 from keras.layers import Dense
@@ -8,8 +6,9 @@ from keras.layers import LSTM
 from keras.layers import RepeatVector
 from keras.layers import TimeDistributed
 from keras.models import Sequential
+from math import sqrt
 from numpy import array
-from numpy import split, dstack
+from numpy import split
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import MinMaxScaler
 
@@ -17,26 +16,27 @@ N_TRAIN_HOURS = 365 * 4 * 8
 N_TEST_HOURS = 365 * 4 * 2
 
 
-# scale train and test data to [-1, 1]
 def scale(data):
-    # fit scaler
-    scaler = MinMaxScaler(feature_range=(-1, 1))
-    scaler = scaler.fit(data)
-    # transform data
+    """Scale train and test data to [-1, 1]"""
+
+    s = MinMaxScaler(feature_range=(-1, 1)).fit(data)
     data = data.reshape(data.shape[0], data.shape[1])
-    data_scaled = scaler.transform(data)
-    return scaler, data_scaled
+    data_scaled = s.transform(data)
+    return s, data_scaled
 
 
 def inverse_input(history, n_input):
+    """Inverse a input"""
+
     data = array(history)
     data = data.reshape((data.shape[0] * data.shape[1], data.shape[2]))
     input_x = data[-n_input:, :]
     return input_x.reshape((1, input_x.shape[0], input_x.shape[1]))
 
 
-# split a multivariate dataset into train/test sets
 def split_dataset(data, output):
+    """Split a multivariate dataset into train/test sets"""
+
     # split into standard days
     train, test = data[:-N_TEST_HOURS], data[-N_TEST_HOURS:]
     logging.info("split_dataset: train {} test {}".format(train.shape, test.shape))
@@ -49,8 +49,9 @@ def split_dataset(data, output):
     return train, test
 
 
-def restructure_into_daily_data(train, test, output):
-    # restructure into windows of daily data (every 6 hours have a new data: 4 a day, for example)
+def restructure_data_by_window(train, test, output):
+    """Restructure into windows of daily data (every 6 hours have a new data: 4 a day, for example)"""
+
     logging.info("restructure_into_daily_data: train {} test {}".format(train.shape, test.shape))
     train = array(split(train, len(train) / output))
     test = array(split(test, len(test) / output))
@@ -58,8 +59,9 @@ def restructure_into_daily_data(train, test, output):
     return train, test
 
 
-# evaluate one or more weekly forecasts against expected values
 def evaluate_forecasts(actual, predicted):
+    """Evaluate one or more forecasts against expected values"""
+
     scores = list()
     # calculate an RMSE score for each day
     for i in range(actual.shape[1]):
@@ -79,14 +81,16 @@ def evaluate_forecasts(actual, predicted):
     return score, scores
 
 
-# summarize scores
 def summarize_scores(name, score, scores):
+    """Summarize scores given by train/test phase"""
+
     s_scores = ', '.join(['%.1f' % s for s in scores])
     logging.info('summarize_scores: %s: [%.3f] %s' % (name, score, s_scores))
 
 
-# convert history into inputs and outputs
 def to_supervised(train, n_input, n_out):
+    """Convert history into inputs and outputs"""
+
     # flatten data
     data = train.reshape((train.shape[0] * train.shape[1], train.shape[2]))
     X, y = list(), list()
@@ -105,18 +109,35 @@ def to_supervised(train, n_input, n_out):
     return array(X), array(y)
 
 
-# train the model
 def build_model(train, n_input, n_out, n_cell=217, n_epochs=5000, n_batch_size=500):
+    """Create a custom model and return a trained model
+
+        Parameters:
+        ----------
+        train: ndarray
+            train dataset
+        n_input: int
+            dimensional input size, ex: 1 -> 6 hours, ex: 2 -> 6 and 12 hours
+        n_out: int
+            dimensional output size
+        n_cell: in
+            LSTM size nodes
+        n_epochs: int
+            train epochs size
+        n_batch_size: in
+            batch size
+
+    """
     # prepare data
     train_x, train_y = to_supervised(train, n_input, n_out)
     # define parameters
     verbose, epochs, batch_size = 0, n_epochs, n_batch_size
-    n_timesteps, n_features, n_outputs = train_x.shape[1], train_x.shape[2], train_y.shape[1]
+    n_time_steps, n_features, n_outputs = train_x.shape[1], train_x.shape[2], train_y.shape[1]
     # reshape output into [samples, timesteps, features]
     train_y = train_y.reshape((train_y.shape[0], train_y.shape[1], 1))
     # define model
     model = Sequential()
-    model.add(LSTM(n_cell, input_shape=(n_timesteps, n_features)))
+    model.add(LSTM(n_cell, input_shape=(n_time_steps, n_features)))
     model.add(RepeatVector(n_outputs))
     model.add(LSTM(n_cell, return_sequences=True))
     model.add(TimeDistributed(Dense(n_features, activation=activations.tanh)))
@@ -127,8 +148,9 @@ def build_model(train, n_input, n_out, n_cell=217, n_epochs=5000, n_batch_size=5
     return model
 
 
-# make a forecast
 def forecast(model, history, n_input):
+    """Make a forecast given some model"""
+
     # flatten data
     data = array(history)
     data = data.reshape((data.shape[0] * data.shape[1], data.shape[2]))
@@ -142,8 +164,9 @@ def forecast(model, history, n_input):
     return yhat
 
 
-# make a forecast
 def reshape_input_predict(history, n_input):
+    """Reshape the input before predict"""
+
     # flatten data
     data = array(history)
     data = data.reshape((data.shape[0] * data.shape[1], data.shape[2]))

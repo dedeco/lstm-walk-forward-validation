@@ -1,6 +1,4 @@
 import plotly.graph_objs as go
-from matplotlib import pyplot
-from plotly.offline import init_notebook_mode, iplot
 
 
 def get_summer(dates):
