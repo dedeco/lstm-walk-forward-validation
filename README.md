@@ -37,7 +37,7 @@ ABS MIN: 0.0001609325408935547 MAX: 97.44740216732025 MEAN: 4.761863858710004 ST
 
 ```
 
-2. A csv file (test prediction dataset) will be generate for every model (ex: plot_results_4_8.csv) and plot a graph (open a windows browser) for every model show the results.
+2. A csv file (test prediction dataset) will be generate for every model (ex: plot_results_4_8.csv) and plot a graph (open a window browser) for every model show the results.
 
 
 
