@@ -24,7 +24,7 @@
 
 
 1.  A log file like this will be generate by every model INPUT X and OUTPUT Y:
-
+```
 Starting... cell 150, epoch 1000, batch_size 1000, input 4 and output 8
 Training 4 8
 split_dataset: train (11656, 108) test (2920, 108)
