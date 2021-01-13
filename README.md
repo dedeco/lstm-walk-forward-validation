@@ -35,6 +35,7 @@ summarize_scores: lstm: [11.493] 10.3, 12.1, 12.4, 12.2, 10.8, 10.6, 11.7, 11.7
 Test RMSE: 11.493
 ABS MIN: 0.0001609325408935547 MAX: 97.44740216732025 MEAN: 4.761863858710004 STD: 10.460350112658151
 
+```
 
 2. A csv file (test prediction dataset) will be generate for every model (ex: plot_results_4_8.csv) and plot a graph (open a windows browser) for every model show the results.
 
